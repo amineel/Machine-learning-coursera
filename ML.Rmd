@@ -1,0 +1,121 @@
+---
+title: "Machine learning assignementy"
+author: "amine"
+date: "6 décembre 2017"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE,eval = FALSE)
+```
+
+
+Prediction Assignment Writeup
+======================================================
+
+I.Summary
+----------------
+The goal of this project is to predict the manner in which person did exercises. This is the "classe" variable in the training set. 
+This report will describe how we built our model, how we used cross validation, what we think the expected out of sample error is, and why we made the choices we did. We will also use our prediction model to predict 20 different test case
+
+II.Exploratory data analyses
+--------------------------- 
+
+The goal of this part, is to explore the data that we will be working with, and explore correlation between different variables.
+
+* Load Data
+
+First step, we will load data.
+
+
+```{r}
+library("R.utils")
+fileURL1<-"https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv"
+fileURL2<-"https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv"
+destfile1="training"
+destfile2="testing"
+if(!file.exists(destfile1) ||!file.exists(destfile2) ){
+    print("dataset to be downloaded")
+    download.file(fileURL1 ,destfile1,method="auto") 
+    download.file(fileURL2 ,destfile2,method="auto") 
+}
+training<-read.csv(destfile1)
+testing<-read.csv(destfile2)
+```
+
+By calcuting the number of variables, we notice that we have 160, and the activities are distrubuted through the 5 classes as follow:
+
+```{r,echo=TRUE}
+table(training$classe)/length(training$classe)
+```
+
+
+```{r}
+library(caret)
+nzv <- nearZeroVar(training, saveMetrics= TRUE)
+rownames<-rownames(nzv[nzv$nzv==FALSE,])
+training<-training[,which(names(training) %in% rownames)]
+```
+
+
+After filtring these values, we still have many variables with NAs, so will delete all columns with a number of missing values greater than 10000.
+```{r}
+colnames<-colnames(training)[colSums(is.na(training)) > 10000]
+training<-training[,-which(names(training) %in% colnames)]
+```
+
+We will also remove all variables that re not related to activity :X, user_name, raw_timestamp_part_1, raw_timestamp_part_2, cvtd_timestamp and num_window and make a first filter by keeping only low correlated variables
+```{r}
+training<-training[,-c(1:6)]
+correlationMatrix <- cor(training[,-53])
+highlyCorrelated <- findCorrelation(correlationMatrix, cutoff=0.7)
+training.filtred<-training[,-highlyCorrelated]
+```
+In order to choose the more accurate features, i will split the dataset into 10 small sets and check the variable importance for each set:
+
+```{r}
+train=createDataPartition(training.filtred$classe,times = 10)
+model1<-train(classe~.,data=training.filtred[train[[1]],],method="rf")
+var<-varImp(model1)$importance
+##we will do this operation 5 times
+```
+
+By choosing the most common features in all models we will keep the common ones.
+
+```{r}
+training.final<-training.filtred[,which(names(training.filtred) %in% var)]
+
+```
+
+III.Model construction
+---------------------
+
+* Building the model
+
+After that we have selected the set of features to be used for ou model, we will choose the model to be used.
+Because of the characteristic noise in the sensor data, we
+will use a Random Forest approach.
+
+We will use Repeated k-fold Cross Validation
+```{r}
+library(caret)
+control <- trainControl(method="repeatedcv", number=10, repeats=3, search="grid")
+metric <- "Accuracy"
+tunegrid <- expand.grid(.mtry=c(1:10))
+model <- train(classe~., data=training.final, method="rf", metric=metric, tuneGrid=tunegrid, trControl=control)
+```
+
+* Testing the model
+
+```{r}
+prediction<-predict(model,testing)
+```
+By using this model for the test set,the result model has an accuracy of 98.86% and an sample out error of 1% 
+```{r}
+model$finalModel
+```
+
+The OOB estimate of  error rate is 0.99% and the obtained result for testing set are 100% accurate.
+
+
+
